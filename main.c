@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <string.h>
+#include <stdint.h>
 
 #define COLUMN_USERNAME_SIZE 32
 #define COLUMN_EMAIL_SIZE 255
@@ -56,8 +57,8 @@ typedef struct {
 
 void serialize_row(Row *source, void *destination) {
     memcpy(destination + ID_OFFSET, &(source->id), ID_SIZE);
-    memcpy(destination + USERNAME_OFFSET, &(source->id), USERNAME_SIZE);
-    memcpy(destination + EMAIL_OFFSET, &(source->id), EMAIL_SIZE);
+    memcpy(destination + USERNAME_OFFSET, &(source->username), USERNAME_SIZE);
+    memcpy(destination + EMAIL_OFFSET, &(source->email), EMAIL_SIZE);
 }
 
 void deserialize_row(void *source, Row *destination) {
@@ -136,6 +137,22 @@ ExecuteResult execute_statement(Statement *statement, Table *table) {
     }
 }
 
+Table* new_table() {
+    Table *table = (Table *)malloc(sizeof(Table));
+    table->num_rows = 0;
+    for (u_int32_t i = 0; i < TABLE_MAX_PAGES; i++) {
+        table->pages[i] = NULL;
+    }
+    return table;
+}
+
+void free_table(Table *table) {
+    for (u_int32_t i = 0; table->pages[i]; i++) {
+        free(table->pages[i]);
+    }
+    free(table);
+}
+
 InputBuffer* new_input_buffer() {
     InputBuffer *input_buffer = (InputBuffer *)malloc(sizeof(InputBuffer));
     input_buffer->buffer = NULL;
@@ -174,6 +191,7 @@ void close_input_buffer(InputBuffer *input_buffer) {
 }
 
 int main(int argc, char *argv[]) {
+    Table *table = new_table();
     InputBuffer *input_buffer = new_input_buffer();
     while (1) {
         print_prompt();
@@ -193,12 +211,21 @@ int main(int argc, char *argv[]) {
         switch (prepare_statement(input_buffer, &statement)) {
             case (PREPARE_SUCCESS):
                 break;
+            case (PREPARE_SYNTAX_ERROR):
+                printf("Syntax error. Could not parse statement.\n");
+                continue;
             case (PREPARE_UNRECOGNIZED_STATEMENT):
                 printf("Unrecognized keyword at start of '%s'.\n", input_buffer->buffer);
                 continue;
         }
 
-        execute_statement(&statement);
-        printf("Executed.\n");
+        switch(execute_statement(&statement, table)) {
+            case (EXECUTE_SUCCESS):
+                printf("Executed.\n");
+                break;
+            case (EXECUTE_TABLE_FULL):
+                printf("Error: Table full.\n");
+                break;
+        }
     }
 }
